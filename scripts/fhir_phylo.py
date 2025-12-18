@@ -1,0 +1,181 @@
+import json
+import argparse
+import os
+import sys
+import csv
+import re  
+from Bio import SeqIO
+from Bio.Phylo.TreeConstruction import DistanceCalculator, DistanceTreeConstructor
+from Bio import Phylo
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+from Bio.Align import MultipleSeqAlignment
+
+def load_reference(ref_path):
+    record = SeqIO.read(ref_path, "fasta")
+    return str(record.seq)
+
+def parse_fhir(file_path):
+    with open(file_path, 'r') as f:
+        data = json.load(f)
+    
+    sample_id = os.path.basename(file_path).replace('.fhir.json', '').replace('.merged', '')
+    variants = {} 
+    
+    metadata = {
+        "sample_id": sample_id,
+        "patient_id": "NA",
+        "latitude": "NA",
+        "longitude": "NA",
+        "conclusion": "NA"
+    }
+    
+    variant_count = 0
+    if 'entry' in data:
+        for entry in data['entry']:
+            res = entry.get('resource', {})
+            r_type = res.get('resourceType')
+
+            if r_type == 'Patient':
+                metadata["patient_id"] = res.get('id', 'NA')
+                
+                for addr in res.get('address', []):
+                    for ext in addr.get('extension', []):
+                        if ext.get('url') == 'http://hl7.org/fhir/StructureDefinition/geolocation':
+                            for sub_ext in ext.get('extension', []):
+                                if sub_ext.get('url') == 'latitude':
+                                    metadata["latitude"] = sub_ext.get('valueDecimal')
+                                elif sub_ext.get('url') == 'longitude':
+                                    metadata["longitude"] = sub_ext.get('valueDecimal')
+
+            elif r_type == 'DiagnosticReport':
+                conclusions = []
+                
+                for cc in res.get('conclusionCode', []):
+                    if cc.get('text'):
+                        conclusions.append(cc.get('text'))
+
+                if res.get('conclusion'):
+                    conclusions.append(res.get('conclusion'))
+                
+                if conclusions:
+                    seen = set()
+                    unique_conclusions = [x for x in conclusions if not (x in seen or seen.add(x))]
+                    metadata["conclusion"] = "; ".join(unique_conclusions)
+
+            elif r_type == 'Observation':
+                code_coding = res.get('code', {}).get('coding', [])
+                is_variant = any(c.get('code') == '69548-6' for c in code_coding)
+                
+                if is_variant:
+                    pos = None
+                    alt = None
+                    
+                    for comp in res.get('component', []):
+                        for c in comp.get('code', {}).get('coding', []):
+                            code = c.get('code')
+                            if code == '81254-5': 
+                                if 'valueRange' in comp:
+                                    pos = comp['valueRange'].get('low', {}).get('value')
+                                elif 'valueInteger' in comp:
+                                    pos = comp.get('valueInteger')
+
+                    if alt is None or pos is None:
+                        hgvs_candidates = []
+                        
+                        vcc = res.get('valueCodeableConcept', {}).get('coding', [])
+                        for c in vcc:
+                            if 'hgvs' in c.get('system', '') or ':' in c.get('code', ''):
+                                hgvs_candidates.append(c.get('code'))
+
+                        for comp in res.get('component', []):
+                            vcc = comp.get('valueCodeableConcept', {}).get('coding', [])
+                            for c in vcc:
+                                if 'hgvs' in c.get('system', '') or ':' in c.get('code', ''):
+                                    hgvs_candidates.append(c.get('code'))
+                        
+                        for hgvs_str in hgvs_candidates:
+                            if not hgvs_str: continue
+                            
+                            match = re.search(r'g\.(\d+)[ACGTN]+>([ACGTN]+)', hgvs_str)
+                            if match:
+                                if pos is None:
+                                    pos = int(match.group(1))
+                                if alt is None:
+                                    alt = match.group(2)
+                                break 
+
+                    if pos is not None and alt:
+                        variants[pos] = alt
+                        variant_count += 1
+                        
+    return sample_id, variants, metadata
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--inputs', nargs='+', required=True, help="List of FHIR JSON files")
+    parser.add_argument('--reference', required=True, help="Reference genome FASTA")
+    args = parser.parse_args()
+
+    ref_seq = load_reference(args.reference)
+    all_variant_positions = set()
+    sample_variants = {}
+    all_metadata = []
+
+    for f in args.inputs:
+        sid, vars, meta = parse_fhir(f)
+        sample_variants[sid] = vars
+        all_metadata.append(meta)
+        all_variant_positions.update(vars.keys())
+
+    with open("metadata.tsv", "w", newline='') as f:
+        fieldnames = ["sample_id", "patient_id", "latitude", "longitude", "conclusion"]
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter='\t')
+        writer.writeheader()
+        writer.writerows(all_metadata)
+
+    sorted_positions = sorted(list(all_variant_positions))
+    samples = list(sample_variants.keys())
+    
+    if not sorted_positions:
+        print("No variants found.")
+    
+    seqs = []
+    for sid in samples:
+        vars = sample_variants[sid]
+        s_chars = []
+        for p in sorted_positions:
+            if p <= len(ref_seq):
+                base = vars.get(p, ref_seq[p-1])
+                s_chars.append(base[0])
+            else:
+                s_chars.append('N')
+        seqs.append("".join(s_chars))
+
+    n = len(samples)
+    matrix_data = [[0]*n for _ in range(n)]
+    for i in range(n):
+        for j in range(i+1, n):
+            dist = sum(1 for k in range(len(seqs[i])) if seqs[i][k] != seqs[j][k])
+            matrix_data[i][j] = dist
+            matrix_data[j][i] = dist
+            
+    with open("distance_matrix.tsv", "w") as f:
+        f.write("snp-dists\t" + "\t".join(samples) + "\n")
+        for i, row in enumerate(matrix_data):
+            f.write(samples[i] + "\t" + "\t".join(map(str, row)) + "\n")
+
+    if len(seqs) > 0 and len(seqs[0]) > 0:
+        aln_records = [SeqRecord(Seq(s), id=i) for s, i in zip(seqs, samples)]
+        aln = MultipleSeqAlignment(aln_records)
+        calculator = DistanceCalculator('identity')
+        dm = calculator.get_distance(aln)
+        constructor = DistanceTreeConstructor()
+        tree = constructor.nj(dm)
+        Phylo.write(tree, "phylo_tree.nwk", "newick")
+    else:
+        with open("phylo_tree.nwk", "w") as f:
+            f.write("();")
+
+if __name__ == "__main__":
+    main()
