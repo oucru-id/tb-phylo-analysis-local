@@ -6,6 +6,7 @@ This pipeline processes FHIR bundle JSON files containing Mycobacterium tubercul
 ## Features
 
 - **Direct FHIR Genomics JSON input**
+- **Consensus Sequence Building from JSON input**
 - **Phylogenetic tree:** Rectangular, circular, and unrooted. 
 - **Transmission network visualization:** Graph and statistical plots (histogram, heatmap, violin plot).
 - **Clinical metadata integration:** Extracted from Bundle Genomics FHIR.
