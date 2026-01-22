@@ -1,6 +1,6 @@
-# TB FHIR Phylogeny Analysis Pipeline
+# TB FHIR Phylogeny Analysis Pipeline (Local)
 
-This pipeline processes FHIR bundle JSON files containing Mycobacterium tuberculosis genomics data to generate SNP distance matrices, phylogenetic trees, transmission network visualizations, and Federated Nextstrain builds. Please refer to our full documentation: https://tb-pipeline-docs.readthedocs.io/en/latest/index.html
+This pipeline processes FHIR bundle JSON files containing Mycobacterium tuberculosis genomics data to generate SNP distance matrices, phylogenetic trees, transmission network visualizations. Please refer to our full documentation: https://tb-pipeline-docs.readthedocs.io/en/latest/index.html
 
 ## Features
 
@@ -8,7 +8,7 @@ This pipeline processes FHIR bundle JSON files containing Mycobacterium tubercul
 - **Alternative local FHIR Genomics input:** Support for local processing of FHIR Bundles.
 - **Phylogenetic Analysis:** Generates SNP distance matrices and phylogenetic trees (Rectangular, Circular, Unrooted).
 - **Transmission Network:** Interactive Graph visualization and statistical plots (histogram, heatmap, violin plot).
-- **Federated Analysis:** Generates inputs for Nextstrain Augur for phylogenetic federated analytics.
+- **Federated Analysis:** Generates pooled coefficient input for phylogenetic federated analytics (global model).
 - **Clinical Metadata Integration:** Extracts metadata (location, lineage, patient ID) from FHIR resources.
 
 ## Usage
@@ -17,12 +17,11 @@ This pipeline processes FHIR bundle JSON files containing Mycobacterium tubercul
 
 - [Nextflow](https://www.nextflow.io/)
 - Python 3.8+
-- [Augur](https://docs.nextstrain.org/projects/augur/en/stable/index.html)
 - Python packages: `biopython`, `pandas`, `networkx`, `pyvis`, `matplotlib`, `seaborn`, `numpy`, `requests`
 
 Install Python dependencies:
 ```bash
-pip install biopython pandas networkx pyvis matplotlib seaborn numpy requests nextstrain-augur
+pip install biopython pandas networkx pyvis matplotlib seaborn numpy requests
 ```
 
 ### Run the Pipeline
@@ -35,4 +34,4 @@ nextflow run main.nf
 
 - FHIR Bundle Genomics JSON files in `data/JSON/` (local) 
 - FHIR Bundle Genomics from FHIR server (params.fhir_server_url and params.fhir_server_auth)
-- Reference genome FASTA in `data/H37Rv.fasta`
+- Reference genome FASTA in `data/H37Rv.fasta` and genomic anchor in `data/anchor`
