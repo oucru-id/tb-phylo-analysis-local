@@ -9,7 +9,7 @@ process VERSIONS {
     script:
     """
     echo "pipeline:" > software_versions.yml
-    echo "  name: phylo_tb_analysis" >> software_versions.yml
+    echo "  name: phylo_tb_analysis_local" >> software_versions.yml
     echo "  version: ${params.version}" >> software_versions.yml
     echo "  nextflow: $nextflow.version" >> software_versions.yml
     
