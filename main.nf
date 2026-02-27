@@ -4,6 +4,7 @@ nextflow.enable.dsl = 2
 
 log.info """
     Mycobacterium tuberculosis Federated Phylogeny & Visualization Pipeline (Local Lab)
+    Version: ${params.version}
     Developed by SPHERES Lab Team
 """
 
