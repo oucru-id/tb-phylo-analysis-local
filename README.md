@@ -1,6 +1,6 @@
 # TB FHIR Phylogeny Analysis Pipeline (Local)
 
-This pipeline processes FHIR bundle JSON files containing Mycobacterium tuberculosis genomics data to generate SNP distance matrices, phylogenetic trees, transmission network visualizations. Please refer to our full documentation: https://tb-pipeline-docs.readthedocs.io/en/latest/index.html
+This pipeline processes FHIR bundle JSON files containing Mycobacterium tuberculosis genomics data to generate SNP distance matrices, phylogenetic trees, transmission network visualizations. Please refer to our full documentation: https://federated-tb-docs.readthedocs.io
 
 ## Features
 
