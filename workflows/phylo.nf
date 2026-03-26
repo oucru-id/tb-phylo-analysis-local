@@ -12,7 +12,6 @@ process FHIR_ANALYSIS {
     path "distance_matrix.tsv", emit: matrix
     path "phylo_tree.nwk",      emit: tree
     path "metadata.tsv",        emit: metadata
-    path "consensus.fasta",     emit: fasta 
 
     script:
     def anchor_arg = anchor_files ? "--anchors ${anchor_files}" : ""
@@ -37,5 +36,4 @@ workflow PHYLO_ANALYSIS {
     matrix   = FHIR_ANALYSIS.out.matrix
     tree     = FHIR_ANALYSIS.out.tree
     metadata = FHIR_ANALYSIS.out.metadata
-    fasta    = FHIR_ANALYSIS.out.fasta 
 }
