@@ -11,53 +11,118 @@ import matplotlib.patches as mpatches
 import math
 
 def generate_network(df, meta_df, threshold, output_file):
+    lineage_colors = {
+        "1": "#e6194b", "2": "#3cb44b", "3": "#4363d8", "4": "#f58231",
+        "5": "#911eb4", "6": "#42d4f4", "7": "#f032e6", "8": "#bfef45",
+        "9": "#fabed4", "Unknown": "#a9a9a9", "Reference": "#808080",
+    }
+
+    def get_sample_lineage(sample_id):
+        meta = meta_df[meta_df['sample_id'] == sample_id]
+        if meta.empty:
+            return "Unknown"
+        conclusion = meta.iloc[0].get('conclusion', 'NA')
+        if conclusion == "Reference Genome":
+            return "Reference"
+        l = get_lineage(conclusion)
+        return l.split('.')[0] if l != "Unknown" else "Unknown"
+
     G = nx.Graph()
-    
+
     for sample in df.index:
         meta = meta_df[meta_df['sample_id'] == sample]
-        
+        lineage = get_sample_lineage(sample)
+        color = lineage_colors.get(lineage, "#a9a9a9")
+
         if not meta.empty:
             m = meta.iloc[0]
             title_html = (
                 f"<b>ID:</b> {sample}<br>"
                 f"<b>Patient:</b> {m.get('patient_id', 'NA')}<br>"
+                f"<b>Lineage:</b> {lineage}<br>"
                 f"<b>Location:</b> {m.get('latitude', 'NA')}, {m.get('longitude', 'NA')}<br>"
                 f"<b>Conclusion:</b> {m.get('conclusion', 'NA')}"
             )
-            group = m.get('patient_id', 'Unknown') 
         else:
-            title_html = sample
-            group = 'Unknown'
+            title_html = f"<b>ID:</b> {sample}<br><b>Lineage:</b> {lineage}"
 
-        G.add_node(sample, title=title_html, group=group, label=sample)
-    
+        G.add_node(sample, title=title_html, color=color, label=sample,
+                   size=25, borderWidth=2, borderWidthSelected=3)
+
     samples = df.index.tolist()
     for i in range(len(samples)):
         for j in range(i + 1, len(samples)):
             s1 = samples[i]
             s2 = samples[j]
-            dist = df.iloc[i, j]
-            
-            if dist <= threshold:
-                weight = 1.0 / (dist + 1)
-                G.add_edge(s1, s2, weight=weight, title=f"{dist} SNPs", label=str(dist))
+            dist = int(df.iloc[i, j])
 
-    net = Network(height="750px", width="100%", bgcolor="#ffffff", font_color="black")
+            if dist <= threshold:
+                G.add_edge(s1, s2, title=f"{dist} SNPs", label=str(dist),
+                           font={"size": 12, "align": "middle"},
+                           color={"color": "#888888", "opacity": 0.6},
+                           width=max(1, 4 - dist * 0.3))
+
+    net = Network(height="750px", width="100%", bgcolor="#ffffff",
+                  font_color="black", cdn_resources='in_line')
     net.from_nx(G)
-    
+
     net.set_options("""
     var options = {
+      "nodes": {
+        "shape": "dot",
+        "font": { "size": 14, "face": "arial" },
+        "shadow": true
+      },
+      "edges": {
+        "smooth": { "type": "continuous" },
+        "font": { "size": 12, "align": "middle" },
+        "shadow": false
+      },
       "physics": {
         "barnesHut": {
-          "gravitationalConstant": -8000,
-          "springLength": 250,
-          "springConstant": 0.04
-        }
+          "gravitationalConstant": -10000,
+          "centralGravity": 0.3,
+          "springLength": 200,
+          "springConstant": 0.05,
+          "damping": 0.09
+        },
+        "minVelocity": 0.75
+      },
+      "interaction": {
+        "hover": true,
+        "tooltipDelay": 100,
+        "navigationButtons": true
       }
     }
     """)
-    
+
     net.write_html(output_file)
+
+    legend_items = []
+    used_lineages = sorted(set(get_sample_lineage(s) for s in df.index))
+    for lin in used_lineages:
+        c = lineage_colors.get(lin, "#a9a9a9")
+        lbl = f"Lineage {lin}" if lin not in ("Unknown", "Reference") else lin
+        legend_items.append(
+            f'<div style="display:flex;align-items:center;margin:3px 0">'
+            f'<span style="display:inline-block;width:16px;height:16px;'
+            f'border-radius:50%;background:{c};margin-right:8px;border:1px solid #555"></span>'
+            f'<span style="font-size:13px">{lbl}</span></div>'
+        )
+    legend_html = (
+        '<div id="legend" style="position:fixed;top:10px;left:10px;background:rgba(255,255,255,0.92);'
+        'padding:12px 16px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);'
+        'font-family:arial;z-index:9999">'
+        '<div style="font-weight:bold;margin-bottom:6px;font-size:14px">TB Lineage</div>'
+        + "".join(legend_items) +
+        '</div>'
+    )
+
+    with open(output_file, 'r') as f:
+        html = f.read()
+    html = html.replace('</body>', legend_html + '\n</body>')
+    with open(output_file, 'w') as f:
+        f.write(html)
 
 def generate_plots(df, output_prefix):
     mask = np.triu(np.ones_like(df, dtype=bool), k=1)
@@ -144,7 +209,27 @@ def plot_rectangular_tree(tree, lineage_map, color_map_mpl, unique_clades, outpu
 
     color_clade(tree.root)
 
-    fig = plt.figure(figsize=(15, 12))
+    n_terminals = len(tree.get_terminals())
+
+    if n_terminals <= 50:
+        fig_height = 12
+        label_size = 10
+        marker_size = 80
+        show_branch_labels = True
+    elif n_terminals <= 150:
+        fig_height = max(15, n_terminals * 0.3)
+        label_size = 8
+        marker_size = 50
+        show_branch_labels = True
+    else:
+        fig_height = max(20, n_terminals * 0.25)
+        label_size = 6
+        marker_size = 30
+        show_branch_labels = False
+
+    fig_width = max(15, fig_height * 0.6)
+
+    fig = plt.figure(figsize=(fig_width, fig_height))
     ax = fig.add_subplot(1, 1, 1)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -152,7 +237,7 @@ def plot_rectangular_tree(tree, lineage_map, color_map_mpl, unique_clades, outpu
     ax.get_yaxis().set_visible(False)
 
     def get_branch_label(clade):
-        if clade.branch_length and clade.branch_length > 0.001:
+        if show_branch_labels and clade.branch_length and clade.branch_length > 0.001:
             return f"{clade.branch_length:.3f}"
         return None
 
@@ -163,7 +248,12 @@ def plot_rectangular_tree(tree, lineage_map, color_map_mpl, unique_clades, outpu
         show_confidence=False,
         label_func=lambda x: x.name if x.is_terminal() else "",
         branch_labels=get_branch_label,
+        label_colors=lambda x: 'black',
     )
+
+    ax.tick_params(axis='y', labelsize=label_size)
+    for label in ax.get_yticklabels():
+        label.set_fontsize(label_size)
     
     terminals = tree.get_terminals()
     for i, clade in enumerate(terminals):
@@ -171,7 +261,7 @@ def plot_rectangular_tree(tree, lineage_map, color_map_mpl, unique_clades, outpu
         x_pos = tree.distance(tree.root, clade)
         l = lineage_map.get(clade.name, "Unknown")
         c_mpl = color_map_mpl.get(l, "gray")
-        ax.scatter(x_pos, y_pos, color=c_mpl, s=80, zorder=10, edgecolors='white', linewidth=0.5)
+        ax.scatter(x_pos, y_pos, color=c_mpl, s=marker_size, zorder=10, edgecolors='white', linewidth=0.5)
 
     handles = [mpatches.Patch(color=color_map_mpl[c], label=f"Lineage {c}") for c in unique_clades]
     plt.legend(handles=handles, title="TB Lineage", loc='upper left', bbox_to_anchor=(1, 1), frameon=False)
@@ -179,7 +269,7 @@ def plot_rectangular_tree(tree, lineage_map, color_map_mpl, unique_clades, outpu
     plt.title("Phylogenetic Tree (Rectangular)", fontsize=14)
     plt.xlabel("Genetic Distance", fontsize=12)
     plt.tight_layout()
-    plt.savefig(output_file)
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
     plt.close()
 
 def get_coords(tree):
@@ -209,8 +299,25 @@ def get_coords(tree):
 
 def plot_circular_tree(tree, lineage_map, color_map_mpl, unique_clades, output_file):
     coords = get_coords(tree)
-    
-    fig = plt.figure(figsize=(15, 15))
+    n_terminals = len(tree.get_terminals())
+
+    if n_terminals <= 50:
+        fig_size = 15
+        marker_size = 40
+        label_size = 8
+        show_labels = True
+    elif n_terminals <= 150:
+        fig_size = max(18, n_terminals * 0.15)
+        marker_size = 25
+        label_size = 6
+        show_labels = True
+    else:
+        fig_size = max(22, n_terminals * 0.1)
+        marker_size = 15
+        label_size = 5
+        show_labels = n_terminals <= 300
+
+    fig = plt.figure(figsize=(fig_size, fig_size))
     ax = fig.add_subplot(111, projection='polar')
     
     ax.set_frame_on(False)
@@ -242,18 +349,19 @@ def plot_circular_tree(tree, lineage_map, color_map_mpl, unique_clades, output_f
             l = lineage_map.get(clade.name, "Unknown")
             c = color_map_mpl.get(l, "gray")
             
-            ax.scatter(theta, r, color=c, s=40, zorder=10, edgecolors='white', linewidth=0.5)
+            ax.scatter(theta, r, color=c, s=marker_size, zorder=10, edgecolors='white', linewidth=0.5)
             
-            rot = math.degrees(theta)
-            if 90 < rot < 270:
-                rot += 180
-                ha = 'right'
-                label_r = r + (max_r * 0.02)
-            else:
-                ha = 'left'
-                label_r = r + (max_r * 0.01)
-                
-            ax.text(theta, label_r, clade.name, rotation=rot, ha=ha, va='center', fontsize=8)
+            if show_labels:
+                rot = math.degrees(theta)
+                if 90 < rot < 270:
+                    rot += 180
+                    ha = 'right'
+                    label_r = r + (max_r * 0.02)
+                else:
+                    ha = 'left'
+                    label_r = r + (max_r * 0.01)
+                    
+                ax.text(theta, label_r, clade.name, rotation=rot, ha=ha, va='center', fontsize=label_size)
 
     handles = [mpatches.Patch(color=color_map_mpl[c], label=f"Lineage {c}") for c in unique_clades]
     fig.legend(handles=handles, title="TB Lineage", loc='upper right', bbox_to_anchor=(0.95, 0.95), frameon=False)
@@ -265,8 +373,25 @@ def plot_circular_tree(tree, lineage_map, color_map_mpl, unique_clades, output_f
 
 def plot_unrooted_tree(tree, lineage_map, color_map_mpl, unique_clades, output_file):
     coords = get_coords(tree)
-    
-    fig, ax = plt.subplots(figsize=(15, 15))
+    n_terminals = len(tree.get_terminals())
+
+    if n_terminals <= 50:
+        fig_size = 15
+        marker_size = 40
+        label_size = 8
+        show_labels = True
+    elif n_terminals <= 150:
+        fig_size = max(18, n_terminals * 0.15)
+        marker_size = 25
+        label_size = 6
+        show_labels = True
+    else:
+        fig_size = max(22, n_terminals * 0.1)
+        marker_size = 15
+        label_size = 5
+        show_labels = n_terminals <= 300
+
+    fig, ax = plt.subplots(figsize=(fig_size, fig_size))
     ax.set_aspect('equal')
     ax.axis('off')
     
@@ -295,22 +420,23 @@ def plot_unrooted_tree(tree, lineage_map, color_map_mpl, unique_clades, output_f
             l = lineage_map.get(clade.name, "Unknown")
             c = color_map_mpl.get(l, "gray")
             
-            ax.scatter(x, y, color=c, s=40, zorder=10, edgecolors='white', linewidth=0.5)
+            ax.scatter(x, y, color=c, s=marker_size, zorder=10, edgecolors='white', linewidth=0.5)
             
-            r, theta = coords[clade]
-            rot = math.degrees(theta)
-            
-            if 90 < rot < 270:
-                rot += 180
-                ha = 'right'
-                lx = x + (max_r * 0.02) * math.cos(theta)
-                ly = y + (max_r * 0.02) * math.sin(theta)
-            else:
-                ha = 'left'
-                lx = x + (max_r * 0.01) * math.cos(theta)
-                ly = y + (max_r * 0.01) * math.sin(theta)
-            
-            ax.text(lx, ly, clade.name, rotation=rot, ha=ha, va='center', fontsize=8, rotation_mode='anchor')
+            if show_labels:
+                r, theta = coords[clade]
+                rot = math.degrees(theta)
+                
+                if 90 < rot < 270:
+                    rot += 180
+                    ha = 'right'
+                    lx = x + (max_r * 0.02) * math.cos(theta)
+                    ly = y + (max_r * 0.02) * math.sin(theta)
+                else:
+                    ha = 'left'
+                    lx = x + (max_r * 0.01) * math.cos(theta)
+                    ly = y + (max_r * 0.01) * math.sin(theta)
+                
+                ax.text(lx, ly, clade.name, rotation=rot, ha=ha, va='center', fontsize=label_size, rotation_mode='anchor')
 
     handles = [mpatches.Patch(color=color_map_mpl[c], label=f"Lineage {c}") for c in unique_clades]
     fig.legend(handles=handles, title="TB Lineage", loc='upper right', bbox_to_anchor=(0.95, 0.95), frameon=False)
