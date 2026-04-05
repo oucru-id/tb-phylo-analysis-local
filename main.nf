@@ -3,13 +3,13 @@
 nextflow.enable.dsl = 2
 
 log.info """
-    Mycobacterium tuberculosis Federated Phylogeny & Visualization Pipeline (Local Lab)
+    Mycobacterium tuberculosis Federated Phylogeny Pipeline (Local Lab)
     Version: ${params.version}
-    Developed by SPHERES Lab Team
+    Developed by SPHERES OUCRU-ID Team
 """
 
 include { PHYLO_ANALYSIS } from './workflows/phylo.nf'
-include { VISUALIZATION }  from './workflows/visualization.nf'
+//include { VISUALIZATION }  from './workflows/visualization.nf'
 include { VERSIONS }       from './workflows/utils.nf'
 
 /* process FETCH_FROM_FHIR {
@@ -47,6 +47,6 @@ workflow {
     // }
 
     PHYLO_ANALYSIS(fhir_ch, ref_ch, anchor_ch)
-    VISUALIZATION(PHYLO_ANALYSIS.out.matrix, PHYLO_ANALYSIS.out.metadata, PHYLO_ANALYSIS.out.tree)
+    //VISUALIZATION(PHYLO_ANALYSIS.out.matrix, PHYLO_ANALYSIS.out.metadata, PHYLO_ANALYSIS.out.tree)
     VERSIONS()
 }
