@@ -4,7 +4,7 @@ A Nextflow pipeline for local Mycobacterium tuberculosis phylogenetic analysis f
 
 ## Features
 
-- **FHIR Genomics Data Gateway:** Fetch patient FHIR genomic bundles directly from a FHIR server using OAuth2 authentication.
+- **FHIR Genomics Data Gateway:** Fetch FHIR genomic bundles directly from a FHIR server using OAuth2 authentication and send pooled coefficient back (distance matrix) to FHIR server.
 - **Local FHIR Data Input:** Support for local processing of FHIR Bundles (offline mode).
 - **Phylogenetic Analysis:** Generates SNP distance matrices and phylogenetic trees.
 - **Transmission Network:** Visualization and statistical plots (histogram, heatmap, violin plot).
@@ -37,12 +37,14 @@ local_phylo_analysis/
 ├── workflows/
 │   ├── phylo.nf                   # Phylogenetic analysis workflow
 │   ├── visualization.nf           # Visualization workflow
+│   ├── upload_fhir.nf             # Upload workflow
 │   └── utils.nf                   # Utility functions
 ├── scripts/
 │   ├── fhir_phylo.py              # Core SNP distance + tree builder
 │   ├── fetch_fhir_data.py         # FHIR server data fetcher
 │   ├── get_access_token.py        # Standalone OAuth2 token generator
 │   ├── visualize_results.py       # Network and tree visualizations
+│   ├── upload_distance_matrix.py  # FHIR server uploader
 │   └── get_versions.py            # Version collection
 └── data/
     ├── H37Rv.fasta                # Reference genome
@@ -75,7 +77,7 @@ nextflow run main.nf
 
 Fill in `data/input_sso.json` with your SSO credentials, then run:
 ```bash
-python3 scripts/get_access_token.py
+python scripts/get_access_token.py
 ```
 This generates `data/access_token.json`.
 
@@ -98,6 +100,7 @@ nextflow run main.nf
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `use_fhir_server` | `false` | `true` to fetch from FHIR server, `false` for local files |
+| `upload_results` | `false` | `true` to send pooled coefficient (distance matrix) to FHIR server |
 | `fhir_dir` | `data/JSON` | Local directory of FHIR JSON files |
 | `fhir_server_url` | `""` | FHIR server base URL |
 | `access_token_file` | `data/access_token.json` | Path to OAuth2 token file |
@@ -113,6 +116,7 @@ results/
 │   ├── distance_matrix.tsv        # Pairwise SNP distance matrix
 │   ├── phylo_tree.nwk             # Newick phylogenetic tree
 │   ├── metadata.tsv               # Sample metadata (lineage, location, patient ID)
+│   ├── upload_result.json         # Pooled coefficient upload result
 ├── fetched_data/                  # FHIR JSON files fetched from server
 ├── visualization/
 │   ├── transmission_network.html  # SNP transmission network
