@@ -71,7 +71,7 @@ nextflow run main.nf
 
 ### FHIR Server Mode
 
-**Step 1 — Get Access Token**
+**Step 1: Get Access Token**
 
 Fill in `data/input_sso.json` with your SSO credentials, then run:
 ```bash
@@ -79,7 +79,7 @@ python3 scripts/get_access_token.py
 ```
 This generates `data/access_token.json`.
 
-**Step 2 — Configure**
+**Step 2: Configure**
 
 In `nextflow.config`, set:
 ```groovy
@@ -88,7 +88,7 @@ fhir_server_url    = "https://<BASE_URL>/fhir"
 fetch_since        = ""  // Optional: "YYYY-MM-DD" to fetch only recent data
 ```
 
-**Step 3 — Run**
+**Step 3: Run**
 ```bash
 nextflow run main.nf
 ```
