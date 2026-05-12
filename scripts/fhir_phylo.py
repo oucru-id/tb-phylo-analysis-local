@@ -3,13 +3,13 @@ import argparse
 import os
 import sys
 import csv
-import re  
+import re
+import numpy as np
 from Bio import SeqIO
-from Bio.Phylo.TreeConstruction import DistanceCalculator, DistanceTreeConstructor
+from Bio.Phylo.TreeConstruction import DistanceMatrix, DistanceTreeConstructor
 from Bio import Phylo
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-from Bio.Align import MultipleSeqAlignment
 
 def load_reference(ref_path):
     record = SeqIO.read(ref_path, "fasta")
@@ -159,31 +159,39 @@ def main():
         snp_seqs.append("".join(s_chars))
 
     n = len(samples)
-    matrix_data = [[0]*n for _ in range(n)]
-    for i in range(n):
-        for j in range(i+1, n):
-            val1 = snp_seqs[i]
-            val2 = snp_seqs[j]
-            dist = 0
-            for k in range(len(val1)):
-                if val1[k] != 'N' and val2[k] != 'N' and val1[k] != val2[k]:
-                    dist += 1
-            matrix_data[i][j] = dist
-            matrix_data[j][i] = dist
-            
+    L = len(snp_seqs[0]) if snp_seqs else 0
+
+    if L > 0:
+        arr = np.frombuffer(''.join(snp_seqs).encode('ascii'), dtype=np.uint8).reshape(n, L)
+        N_byte = ord('N')
+        not_N = arr != N_byte
+
+        matrix_data = np.zeros((n, n), dtype=np.int32)
+        for i in range(n):
+            valid_i = not_N[i]
+            row_i = arr[i]
+            for j in range(i + 1, n):
+                valid = valid_i & not_N[j]
+                d = int(np.sum((row_i != arr[j]) & valid))
+                matrix_data[i, j] = d
+                matrix_data[j, i] = d
+    else:
+        matrix_data = np.zeros((n, n), dtype=np.int32)
+
     with open("distance_matrix.tsv", "w") as f:
         f.write("snp-dists\t" + "\t".join(samples) + "\n")
-        for i, row in enumerate(matrix_data):
-            f.write(samples[i] + "\t" + "\t".join(map(str, row)) + "\n")
+        for i in range(n):
+            f.write(samples[i] + "\t" + "\t".join(map(str, matrix_data[i].tolist())) + "\n")
 
-    if len(snp_seqs) > 0 and len(snp_seqs[0]) > 0:
-        aln_records = [SeqRecord(Seq(s), id=i, description="") for s, i in zip(snp_seqs, samples)]
-        aln = MultipleSeqAlignment(aln_records)
-        calculator = DistanceCalculator('identity')
-        dm = calculator.get_distance(aln)
+    if L > 0:
+        lower_triangle = []
+        for i in range(n):
+            row = [float(matrix_data[i, j]) for j in range(i + 1)]
+            lower_triangle.append(row)
+        dm = DistanceMatrix(samples, lower_triangle)
         constructor = DistanceTreeConstructor()
         tree = constructor.nj(dm)
-        
+
         outgroup_clade = None
         
         for meta in all_metadata:
@@ -209,19 +217,19 @@ def main():
     else:
         with open("phylo_tree.nwk", "w") as f: f.write("();")
     
+    ref_arr = np.frombuffer(ref_seq.encode('ascii'), dtype=np.uint8).copy()
     full_genome_records = []
-    ref_list = list(ref_seq) 
     
     for sid in samples:
         vars = sample_variants[sid]
-        sample_seq_list = ref_list[:] 
-        
-        for pos, alt in vars.items():
-            idx = pos - 1
-            if 0 <= idx < len(sample_seq_list):
-                sample_seq_list[idx] = alt[0] 
-        
-        full_seq = "".join(sample_seq_list)
+        sample_arr = ref_arr.copy()
+        if vars:
+            positions = np.array(list(vars.keys()), dtype=np.int64) - 1
+            alts = ''.join(v[0] for v in vars.values())
+            alt_bytes = np.frombuffer(alts.encode('ascii'), dtype=np.uint8)
+            valid = (positions >= 0) & (positions < len(sample_arr))
+            sample_arr[positions[valid]] = alt_bytes[valid]
+        full_seq = sample_arr.tobytes().decode('ascii')
         full_genome_records.append(SeqRecord(Seq(full_seq), id=sid, description=""))
 
     with open("consensus.fasta", "w") as output_handle:
