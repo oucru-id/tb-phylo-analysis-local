@@ -7,8 +7,6 @@ import argparse
 import numpy as np
 import re
 from Bio import Phylo
-import matplotlib.patches as mpatches
-import math
 
 def generate_network(df, meta_df, threshold, output_file):
     lineage_colors = {
@@ -272,180 +270,6 @@ def plot_rectangular_tree(tree, lineage_map, color_map_mpl, unique_clades, outpu
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
     plt.close()
 
-def get_coords(tree):
-    coords = {}
-    leaves = tree.get_terminals()
-    total_leaves = len(leaves)
-    
-    for i, leaf in enumerate(leaves):
-        angle = (2 * math.pi * i) / total_leaves
-        coords[leaf] = {'theta': angle}
-
-    for clade in tree.get_nonterminals(order='postorder'):
-        children_angles = [coords[c]['theta'] for c in clade.clades]
-        if children_angles:
-            avg_angle = sum(children_angles) / len(children_angles)
-            coords[clade] = {'theta': avg_angle}
-
-    coords[tree.root]['r'] = 0
-    for clade in tree.get_nonterminals(order='preorder'):
-        parent_r = coords[clade]['r']
-        for child in clade.clades:
-            length = child.branch_length if child.branch_length else 0.01
-            coords[child] = coords.get(child, {})
-            coords[child]['r'] = parent_r + length
-            
-    return {k: (v['r'], v['theta']) for k,v in coords.items()}
-
-def plot_circular_tree(tree, lineage_map, color_map_mpl, unique_clades, output_file):
-    coords = get_coords(tree)
-    n_terminals = len(tree.get_terminals())
-
-    if n_terminals <= 50:
-        fig_size = 15
-        marker_size = 40
-        label_size = 8
-        show_labels = True
-    elif n_terminals <= 150:
-        fig_size = max(18, n_terminals * 0.15)
-        marker_size = 25
-        label_size = 6
-        show_labels = True
-    else:
-        fig_size = max(22, n_terminals * 0.1)
-        marker_size = 15
-        label_size = 5
-        show_labels = n_terminals <= 300
-
-    fig = plt.figure(figsize=(fig_size, fig_size))
-    ax = fig.add_subplot(111, projection='polar')
-    
-    ax.set_frame_on(False)
-    ax.grid(False)
-    ax.set_xticks([])
-    ax.set_yticks([])
-
-    max_r = max(r for r, t in coords.values())
-    
-    parents = {c: p for p in tree.find_clades() for c in p.clades}
-
-    for clade in tree.find_clades(order='level'):
-        if clade == tree.root: continue
-        parent = parents.get(clade)
-        if not parent: continue
-
-        r1, t1 = coords[parent]
-        r2, t2 = coords[clade]
-        
-        if abs(t1 - t2) > 0:
-            theta_range = np.linspace(t1, t2, num=20)
-            r_range = [r1] * len(theta_range)
-            ax.plot(theta_range, r_range, color='gray', linewidth=0.5)
-            
-        ax.plot([t2, t2], [r1, r2], color='gray', linewidth=0.5)
-
-    for clade, (r, theta) in coords.items():
-        if clade.is_terminal():
-            l = lineage_map.get(clade.name, "Unknown")
-            c = color_map_mpl.get(l, "gray")
-            
-            ax.scatter(theta, r, color=c, s=marker_size, zorder=10, edgecolors='white', linewidth=0.5)
-            
-            if show_labels:
-                rot = math.degrees(theta)
-                if 90 < rot < 270:
-                    rot += 180
-                    ha = 'right'
-                    label_r = r + (max_r * 0.02)
-                else:
-                    ha = 'left'
-                    label_r = r + (max_r * 0.01)
-                    
-                ax.text(theta, label_r, clade.name, rotation=rot, ha=ha, va='center', fontsize=label_size)
-
-    handles = [mpatches.Patch(color=color_map_mpl[c], label=f"Lineage {c}") for c in unique_clades]
-    fig.legend(handles=handles, title="TB Lineage", loc='upper right', bbox_to_anchor=(0.95, 0.95), frameon=False)
-    
-    plt.title("Phylogenetic Tree (Circular)", fontsize=16, y=1.05)
-    plt.tight_layout()
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    plt.close()
-
-def plot_unrooted_tree(tree, lineage_map, color_map_mpl, unique_clades, output_file):
-    coords = get_coords(tree)
-    n_terminals = len(tree.get_terminals())
-
-    if n_terminals <= 50:
-        fig_size = 15
-        marker_size = 40
-        label_size = 8
-        show_labels = True
-    elif n_terminals <= 150:
-        fig_size = max(18, n_terminals * 0.15)
-        marker_size = 25
-        label_size = 6
-        show_labels = True
-    else:
-        fig_size = max(22, n_terminals * 0.1)
-        marker_size = 15
-        label_size = 5
-        show_labels = n_terminals <= 300
-
-    fig, ax = plt.subplots(figsize=(fig_size, fig_size))
-    ax.set_aspect('equal')
-    ax.axis('off')
-    
-    cart_coords = {}
-    max_r = 0
-    for clade, (r, theta) in coords.items():
-        x = r * math.cos(theta)
-        y = r * math.sin(theta)
-        cart_coords[clade] = (x, y)
-        if r > max_r: max_r = r
-
-    parents = {c: p for p in tree.find_clades() for c in p.clades}
-
-    for clade in tree.find_clades(order='level'):
-        if clade == tree.root: continue
-        parent = parents.get(clade)
-        if not parent: continue
-
-        x1, y1 = cart_coords[parent]
-        x2, y2 = cart_coords[clade]
-        
-        ax.plot([x1, x2], [y1, y2], color='gray', linewidth=0.5)
-
-    for clade, (x, y) in cart_coords.items():
-        if clade.is_terminal():
-            l = lineage_map.get(clade.name, "Unknown")
-            c = color_map_mpl.get(l, "gray")
-            
-            ax.scatter(x, y, color=c, s=marker_size, zorder=10, edgecolors='white', linewidth=0.5)
-            
-            if show_labels:
-                r, theta = coords[clade]
-                rot = math.degrees(theta)
-                
-                if 90 < rot < 270:
-                    rot += 180
-                    ha = 'right'
-                    lx = x + (max_r * 0.02) * math.cos(theta)
-                    ly = y + (max_r * 0.02) * math.sin(theta)
-                else:
-                    ha = 'left'
-                    lx = x + (max_r * 0.01) * math.cos(theta)
-                    ly = y + (max_r * 0.01) * math.sin(theta)
-                
-                ax.text(lx, ly, clade.name, rotation=rot, ha=ha, va='center', fontsize=label_size, rotation_mode='anchor')
-
-    handles = [mpatches.Patch(color=color_map_mpl[c], label=f"Lineage {c}") for c in unique_clades]
-    fig.legend(handles=handles, title="TB Lineage", loc='upper right', bbox_to_anchor=(0.95, 0.95), frameon=False)
-    
-    plt.title("Phylogenetic Tree (Radial)", fontsize=16)
-    plt.tight_layout()
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    plt.close()
-
 def generate_phylo_trees(tree_file, meta_df, output_prefix):
     try:
         tree = Phylo.read(tree_file, "newick")
@@ -456,8 +280,6 @@ def generate_phylo_trees(tree_file, meta_df, output_prefix):
     lineage_map, color_map, unique_clades = get_lineage_colors(tree, meta_df)
     
     plot_rectangular_tree(tree, lineage_map, color_map, unique_clades, f"{output_prefix}_rectangular.png")
-    plot_unrooted_tree(tree, lineage_map, color_map, unique_clades, f"{output_prefix}_unrooted.png")
-    plot_circular_tree(tree, lineage_map, color_map, unique_clades, f"{output_prefix}_circular.png")
 
 def main():
     parser = argparse.ArgumentParser()
