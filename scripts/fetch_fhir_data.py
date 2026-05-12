@@ -3,13 +3,30 @@ import json
 import argparse
 import os
 import sys
+from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse
 
-def get_headers(api_key):
+def get_headers(access_token):
     return {
         'Accept': 'application/fhir+json',
-        'X-API-Key': api_key
+        'Authorization': f'Bearer {access_token}'
     }
+
+def load_access_token(token_file):
+    with open(token_file, 'r') as f:
+        data = json.load(f)
+    access_token = data.get('access_token')
+    if not access_token:
+        raise ValueError(f"No access_token found in {token_file}")
+    expires_at = data.get('expires_at')
+    if expires_at:
+        try:
+            exp = datetime.fromisoformat(expires_at)
+            if datetime.now(timezone.utc) > exp:
+                print(f"WARNING: Access token expired at {expires_at}. Run get_access_token.py to refresh.", file=sys.stderr)
+        except ValueError:
+            pass
+    return access_token
 
 def handle_pagination_url(base_url, next_url):
     if not next_url:
@@ -26,8 +43,8 @@ def handle_pagination_url(base_url, next_url):
     
     return next_url
 
-def fetch_data(base_url, api_key, since=None):
-    headers = get_headers(api_key)
+def fetch_data(base_url, access_token, since=None):
+    headers = get_headers(access_token)
     base_url = base_url.rstrip('/')
     
     print(f"Connecting to FHIR Server: {base_url}")
@@ -125,8 +142,9 @@ def fetch_data(base_url, api_key, since=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', required=True, help="FHIR Server URL")
-    parser.add_argument('--auth', required=True, help="API Key")
+    parser.add_argument('--token-file', required=True, help="Path to access_token.json")
     parser.add_argument('--since', help="Filter data updated after YYYY-MM-DD")
     args = parser.parse_args()
-    
-    fetch_data(args.url, args.auth, args.since)
+
+    access_token = load_access_token(args.token_file)
+    fetch_data(args.url, access_token, args.since)
