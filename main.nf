@@ -8,9 +8,10 @@ log.info """
     Developed by SPHERES OUCRU-ID Team
 """
 
-include { PHYLO_ANALYSIS } from './workflows/phylo.nf'
-include { VISUALIZATION }  from './workflows/visualization.nf'
-include { VERSIONS }       from './workflows/utils.nf'
+include { PHYLO_ANALYSIS }      from './workflows/phylo.nf'
+include { VISUALIZATION }       from './workflows/visualization.nf'
+include { VERSIONS }            from './workflows/utils.nf'
+include { UPLOAD_FHIR }         from './workflows/upload_fhir.nf'
 
 process FETCH_FROM_FHIR {
     publishDir "${params.results_dir}/fetched_data", mode: 'copy'
@@ -50,4 +51,12 @@ workflow {
     PHYLO_ANALYSIS(fhir_ch, ref_ch, anchor_ch)
     VISUALIZATION(PHYLO_ANALYSIS.out.matrix, PHYLO_ANALYSIS.out.metadata, PHYLO_ANALYSIS.out.tree)
     VERSIONS()
+
+    if (params.upload_results) {
+        if (!params.fhir_server_url) {
+            error "fhir_server_url is not set"
+        }
+        upload_token_ch = Channel.fromPath(params.access_token_file, checkIfExists: true).first()
+        UPLOAD_FHIR(PHYLO_ANALYSIS.out.matrix, params.fhir_server_url, upload_token_ch)
+    }
 }
