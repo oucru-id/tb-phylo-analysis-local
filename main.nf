@@ -9,15 +9,15 @@ log.info """
 """
 
 include { PHYLO_ANALYSIS } from './workflows/phylo.nf'
-//include { VISUALIZATION }  from './workflows/visualization.nf'
+include { VISUALIZATION }  from './workflows/visualization.nf'
 include { VERSIONS }       from './workflows/utils.nf'
 
-/* process FETCH_FROM_FHIR {
+process FETCH_FROM_FHIR {
     publishDir "${params.results_dir}/fetched_data", mode: 'copy'
 
     input:
     val url
-    val auth
+    path token_file
     val since
 
     output:
@@ -28,25 +28,26 @@ include { VERSIONS }       from './workflows/utils.nf'
     """
     python3 $baseDir/scripts/fetch_fhir_data.py \\
         --url "${url}" \\
-        --auth "${auth}" \\
+        --token-file "${token_file}" \\
         $date_arg
     """
-} */
+}
 
 workflow {
     ref_ch = Channel.fromPath(params.reference, checkIfExists: true).first()
     anchor_ch = Channel.fromPath("$baseDir/data/anchor/*.json").collect().ifEmpty([])
 
-    // if (params.fhir_server_url && params.fhir_server_url != "null") {
-    //     log.info "Using FHIR Server: ${params.fhir_server_url}"
-        
-    //     FETCH_FROM_FHIR(params.fhir_server_url, params.fhir_server_auth, params.fetch_since)
-    //     fhir_ch = FETCH_FROM_FHIR.out.json_files.flatten()
-    // } else {        
+    if (params.use_fhir_server) {
+        log.info "Fetching from FHIR Server: ${params.fhir_server_url}"
+        token_ch = Channel.fromPath(params.access_token_file, checkIfExists: true).first()
+        FETCH_FROM_FHIR(params.fhir_server_url, token_ch, params.fetch_since)
+        fhir_ch = FETCH_FROM_FHIR.out.json_files.flatten()
+    } else {
+        log.info "Using local directory: ${params.fhir_dir}"
         fhir_ch = Channel.fromPath("${params.fhir_dir}/*.json", checkIfExists: true)
-    // }
+    }
 
     PHYLO_ANALYSIS(fhir_ch, ref_ch, anchor_ch)
-    //VISUALIZATION(PHYLO_ANALYSIS.out.matrix, PHYLO_ANALYSIS.out.metadata, PHYLO_ANALYSIS.out.tree)
+    VISUALIZATION(PHYLO_ANALYSIS.out.matrix, PHYLO_ANALYSIS.out.metadata, PHYLO_ANALYSIS.out.tree)
     VERSIONS()
 }
