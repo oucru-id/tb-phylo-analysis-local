@@ -2,12 +2,6 @@
 
 nextflow.enable.dsl = 2
 
-log.info """
-    Mycobacterium tuberculosis Federated Phylogeny Pipeline (Local Lab)
-    Version: ${params.version}
-    Developed by SPHERES OUCRU-ID Team
-"""
-
 include { PHYLO_ANALYSIS }      from './workflows/phylo.nf'
 include { VISUALIZATION }       from './workflows/visualization.nf'
 include { VERSIONS }            from './workflows/utils.nf'
@@ -35,6 +29,13 @@ process FETCH_FROM_FHIR {
 }
 
 workflow {
+    
+    log.info """
+    Mycobacterium tuberculosis Federated Phylogeny Pipeline (Local Lab)
+    Version: ${params.version}
+    Developed by SPHERES OUCRU-ID Team
+"""
+
     ref_ch = Channel.fromPath(params.reference, checkIfExists: true).first()
     anchor_ch = Channel.fromPath("$baseDir/data/anchor/*.json").collect().ifEmpty([])
 
